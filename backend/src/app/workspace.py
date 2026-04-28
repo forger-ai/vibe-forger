@@ -17,7 +17,6 @@ from pydantic import BaseModel, Field
 APP_ID = "vibe-forger"
 MAX_TEXT_BYTES = 1024 * 1024
 MAX_TREE_ENTRIES = 1000
-MAX_TREE_DEPTH = 6
 
 router = APIRouter(prefix="/api", tags=["workspace"])
 
@@ -249,7 +248,7 @@ def _workspace_info() -> WorkspaceInfo:
     )
 
 
-def _node_for_path(root: Path, path: Path, depth: int, counter: list[int]) -> FileNode:
+def _node_for_path(root: Path, path: Path, counter: list[int]) -> FileNode:
     if counter[0] >= MAX_TREE_ENTRIES:
         return FileNode(
             name=path.name or root.name,
@@ -279,15 +278,14 @@ def _node_for_path(root: Path, path: Path, depth: int, counter: list[int]) -> Fi
     stat = resolved.stat()
     if resolved.is_dir():
         children: list[FileNode] = []
-        if depth < MAX_TREE_DEPTH:
-            entries = sorted(
-                resolved.iterdir(),
-                key=lambda entry: (not entry.is_dir(), entry.name.lower()),
-            )
-            for entry in entries:
-                if entry.name in {".DS_Store", "__pycache__"}:
-                    continue
-                children.append(_node_for_path(root, entry, depth + 1, counter))
+        entries = sorted(
+            resolved.iterdir(),
+            key=lambda entry: (not entry.is_dir(), entry.name.lower()),
+        )
+        for entry in entries:
+            if entry.name in {".DS_Store", "__pycache__"}:
+                continue
+            children.append(_summary_node_for_path(root, entry, counter))
         return FileNode(
             name=resolved.name or root.name,
             path=_display_relative(root, resolved),
@@ -296,6 +294,50 @@ def _node_for_path(root: Path, path: Path, depth: int, counter: list[int]) -> Fi
             children=children,
         )
 
+    return FileNode(
+        name=resolved.name,
+        path=_display_relative(root, resolved),
+        type="file",
+        size=stat.st_size,
+        modified_at=_format_mtime(resolved),
+    )
+
+
+def _summary_node_for_path(root: Path, path: Path, counter: list[int]) -> FileNode:
+    if counter[0] >= MAX_TREE_ENTRIES:
+        return FileNode(
+            name=path.name,
+            path=_display_relative(root, path),
+            type="blocked",
+            error="The workspace tree is too large to display completely.",
+        )
+    counter[0] += 1
+
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError:
+        return FileNode(
+            name=path.name,
+            path=_display_relative(root, path),
+            type="blocked",
+            error="Cannot resolve this path.",
+        )
+    if not _is_inside(root, resolved):
+        return FileNode(
+            name=path.name,
+            path=_display_relative(root, path),
+            type="blocked",
+            error="Symlink points outside the authorized root.",
+        )
+    stat = resolved.stat()
+    if resolved.is_dir():
+        return FileNode(
+            name=resolved.name or root.name,
+            path=_display_relative(root, resolved),
+            type="folder",
+            modified_at=_format_mtime(resolved),
+            children=None,
+        )
     return FileNode(
         name=resolved.name,
         path=_display_relative(root, resolved),
@@ -332,9 +374,12 @@ def use_external_workspace(input_data: ExternalWorkspaceRequest) -> WorkspaceInf
 
 
 @router.get("/fs/tree", response_model=FileNode)
-def get_tree() -> FileNode:
+def get_tree(path: str = "") -> FileNode:
     _, root = _active_root()
-    return _node_for_path(root, root, 0, [0])
+    target = _resolve_existing(root, path)
+    if not target.is_dir():
+        _http_error(400, "Only folders can be expanded.")
+    return _node_for_path(root, target, [0])
 
 
 @router.get("/fs/read", response_model=ReadFileResponse)

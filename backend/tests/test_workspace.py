@@ -96,6 +96,30 @@ def test_rejects_path_escape_and_absolute_paths(tmp_path: Path, monkeypatch) -> 
     assert "Absolute paths" in absolute.json()["detail"]
 
 
+def test_tree_loads_one_folder_at_a_time(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    client = _client(tmp_path, monkeypatch)
+    client.post("/api/workspace/internal")
+    root = tmp_path / "internal"
+    (root / "src" / "app").mkdir(parents=True)
+    (root / "src" / "app" / "main.py").write_text("print('hello')\n", "utf-8")
+    (root / "README.md").write_text("# Demo\n", "utf-8")
+
+    root_tree = client.get("/api/fs/tree")
+    assert root_tree.status_code == 200
+    root_payload = root_tree.json()
+    src = next(item for item in root_payload["children"] if item["name"] == "src")
+    assert src["type"] == "folder"
+    assert src["children"] is None
+    assert all(item["name"] != "app" for item in root_payload["children"])
+
+    src_tree = client.get("/api/fs/tree", params={"path": "src"})
+    assert src_tree.status_code == 200
+    src_payload = src_tree.json()
+    assert src_payload["path"] == "src"
+    assert [item["name"] for item in src_payload["children"]] == ["app"]
+    assert src_payload["children"][0]["children"] is None
+
+
 def test_rejects_binary_and_large_files(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
     client = _client(tmp_path, monkeypatch)
     client.post("/api/workspace/internal")

@@ -21,10 +21,12 @@ import {
   Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import DeleteIcon from "@mui/icons-material/Delete";
 import DriveFolderUploadIcon from "@mui/icons-material/DriveFolderUpload";
 import EditIcon from "@mui/icons-material/Edit";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import FolderIcon from "@mui/icons-material/Folder";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import NoteAddIcon from "@mui/icons-material/NoteAdd";
@@ -118,15 +120,46 @@ const errorMessage = (error: unknown) =>
     ? error.message
     : "No pudimos completar la accion.";
 
+const findNode = (node: FileNode | null, path: string): FileNode | null => {
+  if (!node) return null;
+  if (node.path === path) return node;
+  for (const child of node.children ?? []) {
+    const match = findNode(child, path);
+    if (match) return match;
+  }
+  return null;
+};
+
+const mergeLoadedNode = (current: FileNode | null, loaded: FileNode): FileNode => {
+  if (!current || loaded.path === "") return loaded;
+  if (current.path === loaded.path) {
+    return { ...current, ...loaded, children: loaded.children ?? [] };
+  }
+  return {
+    ...current,
+    children: (current.children ?? []).map((child) =>
+      loaded.path === child.path || loaded.path.startsWith(`${child.path}/`)
+        ? mergeLoadedNode(child, loaded)
+        : child,
+    ),
+  };
+};
+
 function FileTree({
   node,
   activePath,
-  onOpen,
+  expandedPaths,
+  loadingFolders,
+  onToggleFolder,
+  onOpenFile,
   depth = 0,
 }: {
   node: FileNode;
   activePath: string | null;
-  onOpen: (node: FileNode) => void;
+  expandedPaths: Set<string>;
+  loadingFolders: Set<string>;
+  onToggleFolder: (node: FileNode) => void;
+  onOpenFile: (node: FileNode) => void;
   depth?: number;
 }) {
   if (node.path === "") {
@@ -137,7 +170,10 @@ function FileTree({
             key={`${child.type}:${child.path}`}
             node={child}
             activePath={activePath}
-            onOpen={onOpen}
+            expandedPaths={expandedPaths}
+            loadingFolders={loadingFolders}
+            onToggleFolder={onToggleFolder}
+            onOpenFile={onOpenFile}
             depth={0}
           />
         ))}
@@ -146,6 +182,9 @@ function FileTree({
   }
 
   const disabled = node.type === "blocked";
+  const isFolder = node.type === "folder";
+  const isExpanded = isFolder && expandedPaths.has(node.path);
+  const isLoading = isFolder && loadingFolders.has(node.path);
 
   return (
     <>
@@ -153,33 +192,53 @@ function FileTree({
         dense
         disabled={disabled}
         selected={node.path === activePath}
-        onClick={() => onOpen(node)}
+        onClick={() => (isFolder ? onToggleFolder(node) : onOpenFile(node))}
         sx={{
-          pl: 1.25 + depth * 1.8,
+          pl: 0.75 + depth * 1.6,
           pr: 1,
-          minHeight: 34,
+          minHeight: 32,
           borderRadius: 1,
           mx: 0.75,
           my: 0.2,
+          color: disabled ? "text.disabled" : "text.primary",
+          "&.Mui-selected": {
+            bgcolor: "rgba(68, 163, 255, 0.16)",
+          },
+          "&.Mui-selected:hover": {
+            bgcolor: "rgba(68, 163, 255, 0.22)",
+          },
+          "&:hover": {
+            bgcolor: "rgba(255,255,255,0.06)",
+          },
         }}
       >
-        <ListItemIcon sx={{ minWidth: 30, color: disabled ? "text.disabled" : "inherit" }}>
-          {node.type === "folder" ? <FolderIcon fontSize="small" /> : <InsertDriveFileIcon fontSize="small" />}
+        <ListItemIcon sx={{ minWidth: 22, color: disabled ? "text.disabled" : "text.secondary" }}>
+          {isFolder ? (
+            isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />
+          ) : (
+            <Box sx={{ width: 20 }} />
+          )}
+        </ListItemIcon>
+        <ListItemIcon sx={{ minWidth: 28, color: disabled ? "text.disabled" : isFolder ? "warning.main" : "text.secondary" }}>
+          {isFolder ? <FolderIcon fontSize="small" /> : <InsertDriveFileIcon fontSize="small" />}
         </ListItemIcon>
         <ListItemText
           primary={node.name}
-          secondary={node.type === "blocked" ? node.error : undefined}
+          secondary={node.type === "blocked" ? node.error : isLoading ? "Cargando..." : undefined}
           primaryTypographyProps={{ noWrap: true, fontSize: 13 }}
           secondaryTypographyProps={{ noWrap: true, fontSize: 11 }}
         />
       </ListItemButton>
-      {node.type === "folder" &&
+      {isFolder && isExpanded &&
         (node.children ?? []).map((child) => (
           <FileTree
             key={`${child.type}:${child.path}`}
             node={child}
             activePath={activePath}
-            onOpen={onOpen}
+            expandedPaths={expandedPaths}
+            loadingFolders={loadingFolders}
+            onToggleFolder={onToggleFolder}
+            onOpenFile={onOpenFile}
             depth={depth + 1}
           />
         ))}
@@ -190,6 +249,8 @@ function FileTree({
 export default function App() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null);
   const [tree, setTree] = useState<FileNode | null>(null);
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
+  const [loadingFolders, setLoadingFolders] = useState<Set<string>>(new Set());
   const [activePath, setActivePath] = useState<string | null>(null);
   const [activeType, setActiveType] = useState<"file" | "folder" | null>(null);
   const [content, setContent] = useState("");
@@ -205,28 +266,38 @@ export default function App() {
   const activeFolder = useMemo(() => {
     const selected = activePath ?? "";
     if (!selected) return "";
-    const find = (node: FileNode): FileNode | null => {
-      if (node.path === selected) return node;
-      for (const child of node.children ?? []) {
-        const match = find(child);
-        if (match) return match;
-      }
-      return null;
-    };
-    const active = tree ? find(tree) : null;
+    const active = findNode(tree, selected);
     return active?.type === "folder" ? active.path : dirname(selected);
   }, [activePath, tree]);
 
-  const refreshTree = useCallback(async () => {
-    setTreeLoading(true);
+  const loadFolder = useCallback(async (path = "", options: { replace?: boolean } = {}) => {
+    setLoadingFolders((current) => new Set(current).add(path));
+    if (path === "") {
+      setTreeLoading(true);
+    }
     try {
-      setTree(await get<FileNode>("/api/fs/tree"));
+      const loaded = await get<FileNode>(`/api/fs/tree?path=${encodeURIComponent(path)}`);
+      setTree((current) => options.replace ? loaded : mergeLoadedNode(current, loaded));
+      return loaded;
     } catch (err) {
       setError(errorMessage(err));
+      return null;
     } finally {
-      setTreeLoading(false);
+      setLoadingFolders((current) => {
+        const next = new Set(current);
+        next.delete(path);
+        return next;
+      });
+      if (path === "") {
+        setTreeLoading(false);
+      }
     }
   }, []);
+
+  const refreshTree = useCallback(async () => {
+    setTreeLoading(true);
+    await loadFolder("", { replace: true });
+  }, [loadFolder]);
 
   const loadWorkspace = useCallback(async () => {
     setLoading(true);
@@ -234,6 +305,7 @@ export default function App() {
       const next = await get<WorkspaceInfo>("/api/workspace");
       setWorkspace(next);
       if (next.selected) {
+        setExpandedPaths(new Set());
         await refreshTree();
       }
     } catch (err) {
@@ -264,6 +336,7 @@ export default function App() {
       setContent("");
       setSavedContent("");
       setFileMeta(null);
+      setExpandedPaths(new Set());
       await refreshTree();
     } catch (err) {
       setError(errorMessage(err));
@@ -290,6 +363,7 @@ export default function App() {
       setContent("");
       setSavedContent("");
       setFileMeta(null);
+      setExpandedPaths(new Set());
       await refreshTree();
     } catch (err) {
       setError(errorMessage(err));
@@ -298,16 +372,29 @@ export default function App() {
     }
   };
 
-  const openFile = async (node: FileNode) => {
-    if (node.type === "folder") {
-      setActivePath(node.path);
-      setActiveType("folder");
-      setContent("");
-      setSavedContent("");
-      setFileMeta(null);
-      setSaveState("idle");
+  const toggleFolder = async (node: FileNode) => {
+    if (node.type !== "folder") return;
+    setActivePath(node.path);
+    setActiveType("folder");
+    setContent("");
+    setSavedContent("");
+    setFileMeta(null);
+    setSaveState("idle");
+    if (expandedPaths.has(node.path)) {
+      setExpandedPaths((current) => {
+        const next = new Set(current);
+        next.delete(node.path);
+        return next;
+      });
       return;
     }
+    setExpandedPaths((current) => new Set(current).add(node.path));
+    if (!node.children) {
+      await loadFolder(node.path);
+    }
+  };
+
+  const openFile = async (node: FileNode) => {
     if (node.type !== "file") return;
     setLoading(true);
     try {
@@ -336,7 +423,7 @@ export default function App() {
       setSavedContent(file.content);
       setFileMeta(file);
       setSaveState("saved");
-      await refreshTree();
+      await loadFolder(dirname(activePath));
     } catch (err) {
       setSaveState("error");
       setError(errorMessage(err));
@@ -361,7 +448,10 @@ export default function App() {
     const path = joinPath(activeFolder, name.trim());
     try {
       await post("/api/fs/create", { path, type });
-      await refreshTree();
+      await loadFolder(activeFolder);
+      if (activeFolder && expandedPaths.has(activeFolder)) {
+        setExpandedPaths((current) => new Set(current).add(activeFolder));
+      }
       if (type === "file") {
         await openFile({ name: name.trim(), path, type: "file" });
       }
@@ -382,7 +472,7 @@ export default function App() {
       if (fileMeta) {
         setFileMeta({ ...fileMeta, path: newPath });
       }
-      await refreshTree();
+      await loadFolder(dirname(newPath));
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -404,7 +494,7 @@ export default function App() {
         setSaveState("idle");
       }
       setPendingDelete(null);
-      await refreshTree();
+      await loadFolder(dirname(pendingDelete.path));
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -462,7 +552,7 @@ export default function App() {
       </Box>
 
       <Box sx={{ display: "grid", gridTemplateColumns: "320px minmax(0, 1fr)", height: "calc(100vh - 58px)" }}>
-        <Box sx={{ borderRight: "1px solid", borderColor: "divider", bgcolor: "#101820", color: "#E9F3EF", minWidth: 0 }}>
+        <Box sx={{ borderRight: "1px solid", borderColor: "divider", bgcolor: "#0F1720", color: "text.primary", minWidth: 0 }}>
           <Box sx={{ p: 1.25, display: "flex", alignItems: "center", gap: 0.75 }}>
             <Tooltip title="Abrir carpeta">
               <IconButton size="small" onClick={() => void openExternalWorkspace()} sx={{ color: "inherit" }}>
@@ -523,13 +613,22 @@ export default function App() {
           <Divider sx={{ borderColor: "rgba(255,255,255,0.12)" }} />
           {treeLoading && <Box sx={{ p: 2 }}><CircularProgress size={18} color="inherit" /></Box>}
           <List dense disablePadding sx={{ py: 1, overflow: "auto", height: "calc(100% - 50px)" }}>
-            {tree && <FileTree node={tree} activePath={activePath} onOpen={openFile} />}
+            {tree && (
+              <FileTree
+                node={tree}
+                activePath={activePath}
+                expandedPaths={expandedPaths}
+                loadingFolders={loadingFolders}
+                onToggleFolder={toggleFolder}
+                onOpenFile={openFile}
+              />
+            )}
           </List>
         </Box>
 
-        <Box sx={{ position: "relative", minWidth: 0 }}>
+        <Box sx={{ position: "relative", minWidth: 0, bgcolor: "background.default" }}>
           {loading && (
-            <Box sx={{ position: "absolute", inset: 0, zIndex: 2, display: "grid", placeItems: "center", bgcolor: "rgba(250, 248, 244, 0.78)" }}>
+            <Box sx={{ position: "absolute", inset: 0, zIndex: 2, display: "grid", placeItems: "center", bgcolor: "rgba(10, 14, 20, 0.78)" }}>
               <CircularProgress />
             </Box>
           )}
@@ -570,7 +669,7 @@ export default function App() {
                 language={languageForPath(activePath)}
                 value={content}
                 onChange={(value) => setContent(value ?? "")}
-                theme="vs"
+                theme="vs-dark"
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,

@@ -35,9 +35,17 @@
     "short_description": "A simple local IDE for authorized folders.",
     "description": "Vibe Forger is a lightweight local IDE. It opens an internal workspace or a user-selected folder, shows a file explorer, edits text files with Monaco, and keeps file operations scoped to the authorized root.",
     "category": "productivity",
-    "permissions": [
-      "app_data",
-      "user_selected_folders"
+    "capabilities": [
+      {
+        "id": "internal_workspace",
+        "title": "Guardar un workspace privado",
+        "description": "Crea y edita archivos dentro del espacio local privado de la app."
+      },
+      {
+        "id": "user_selected_folders",
+        "title": "Abrir carpetas que eliges",
+        "description": "Permite explorar y editar archivos de texto dentro de una carpeta seleccionada por ti."
+      }
     ],
     "supported_platforms": [
       "darwin_arm64",
