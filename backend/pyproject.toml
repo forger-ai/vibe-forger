@@ -1,7 +1,7 @@
 [project]
-name = "skeleton"
+name = "vibe-forger"
 version = "0.1.0"
-description = "FastAPI backend skeleton"
+description = "Filesystem backend for Vibe Forger"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi[standard]>=0.115",

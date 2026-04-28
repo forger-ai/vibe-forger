@@ -18,11 +18,14 @@ def _resolve_database_url() -> str:
 
 
 DATABASE_URL = _resolve_database_url()
+connect_args = (
+    {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+)
 
 engine = create_engine(
     DATABASE_URL,
     echo=False,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {},
+    connect_args=connect_args,
 )
 
 if DATABASE_URL.startswith("sqlite"):

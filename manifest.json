@@ -1,15 +1,16 @@
 {
-  "name": "vite-fastapi-sqlite-skeleton",
+  "name": "vibe-forger",
   "version": "0.1.0",
-  "description": "Base template for Forger apps using FastAPI, SQLite, Vite, React, and MUI.",
+  "description": "A local-first mini IDE for editing text files inside an authorized workspace root.",
   "changelog": [
     {
       "version": "0.1.0",
-      "summary": "Base functional skeleton for the vite-fastapi-sqlite stack.",
+      "summary": "Initial Vibe Forger app.",
       "changes": [
-        "Provides a working FastAPI backend and Vite React frontend.",
-        "Includes the stack commons submodule contract.",
-        "Defines safe packaging defaults for local Forger apps."
+        "Adds a Monaco-based editor for real text file editing.",
+        "Supports exploring, creating, renaming, deleting, opening, editing, and saving files and folders inside the active root.",
+        "Restricts filesystem access to the internal workspace or a folder selected explicitly through Forger Desktop.",
+        "Rejects path traversal, absolute paths, symlinks outside the authorized root, large files, binary files, and non-UTF-8 text."
       ]
     }
   ],
@@ -30,12 +31,25 @@
     }
   },
   "catalog": {
-    "display_name": "Skeleton",
-    "short_description": "Base template for new local Forger apps.",
-    "description": "Skeleton validates the FastAPI backend, SQLite local storage shape, Vite React frontend, and MUI visual stack used by Forger apps.",
-    "category": "utilities",
-    "permissions": ["app_data"],
-    "supported_platforms": ["darwin_arm64", "darwin_x64"]
+    "display_name": "Vibe Forger",
+    "short_description": "A simple local IDE for authorized folders.",
+    "description": "Vibe Forger is a lightweight local IDE. It opens an internal workspace or a user-selected folder, shows a file explorer, edits text files with Monaco, and keeps file operations scoped to the authorized root.",
+    "category": "productivity",
+    "permissions": [
+      "app_data",
+      "user_selected_folders"
+    ],
+    "supported_platforms": [
+      "darwin_arm64",
+      "darwin_x64"
+    ],
+    "release": {
+      "repository": "forger-ai/vibe-forger",
+      "tag_template": "{name}/v{version}",
+      "asset_name_template": "{name}-{version}.zip",
+      "catalog_repository": "forger-ai/apps-catalog",
+      "catalog_manifest_path": "vite-fastapi-sqlite/vibe-forger/manifest.json"
+    }
   },
   "services": [
     {
@@ -44,27 +58,41 @@
       "context": "./backend",
       "port": 8000,
       "command": "uv run fastapi dev src/app/main.py --host 0.0.0.0 --port 8000",
-      "healthcheck": "/api/health",
+      "healthcheck": "/health",
       "environment": {
-        "DATABASE_URL": "sqlite:////app/data/app.sqlite",
-        "CORS_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173"
+        "DATABASE_URL": "sqlite:////app/data/vibe_forger.sqlite",
+        "CORS_ORIGINS": "http://localhost:5182,http://127.0.0.1:5182"
       },
       "volumes": [
-        { "source": "./backend", "target": "/app" },
-        { "source": "./backend/data", "target": "/app/data", "persist": true }
+        {
+          "source": "./backend",
+          "target": "/app"
+        },
+        {
+          "source": "./backend/data",
+          "target": "/app/data",
+          "persist": true
+        }
       ]
     },
     {
       "name": "frontend",
       "type": "http",
       "context": "./frontend",
-      "port": 5173,
-      "command": "npm run dev -- --host 0.0.0.0 --port 5173",
+      "port": 5182,
+      "command": "npm run dev -- --host 0.0.0.0 --port 5182",
       "environment": {
         "VITE_API_BASE_URL": "http://localhost:8000"
       },
-      "depends_on": ["backend"]
+      "depends_on": [
+        "backend"
+      ]
     }
   ],
-  "skills": ["./skills/stack-database-extension"]
+  "scripts": {
+    "verify": "cd backend && uv run python scripts/verify.py"
+  },
+  "skills": [
+    "./skills/stack-database-extension"
+  ]
 }
