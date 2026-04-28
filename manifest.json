@@ -1,0 +1,70 @@
+{
+  "name": "vite-fastapi-sqlite-skeleton",
+  "version": "0.1.0",
+  "description": "Base template for Forger apps using FastAPI, SQLite, Vite, React, and MUI.",
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "summary": "Base functional skeleton for the vite-fastapi-sqlite stack.",
+      "changes": [
+        "Provides a working FastAPI backend and Vite React frontend.",
+        "Includes the stack commons submodule contract.",
+        "Defines safe packaging defaults for local Forger apps."
+      ]
+    }
+  ],
+  "stack": {
+    "backend": {
+      "language": "python",
+      "framework": "fastapi",
+      "package_manager": "uv",
+      "database": "sqlite",
+      "python_version": "3.12"
+    },
+    "frontend": {
+      "language": "typescript",
+      "framework": "react",
+      "bundler": "vite",
+      "ui": "mui",
+      "node_version": "24"
+    }
+  },
+  "catalog": {
+    "display_name": "Skeleton",
+    "short_description": "Base template for new local Forger apps.",
+    "description": "Skeleton validates the FastAPI backend, SQLite local storage shape, Vite React frontend, and MUI visual stack used by Forger apps.",
+    "category": "utilities",
+    "permissions": ["app_data"],
+    "supported_platforms": ["darwin_arm64", "darwin_x64"]
+  },
+  "services": [
+    {
+      "name": "backend",
+      "type": "http",
+      "context": "./backend",
+      "port": 8000,
+      "command": "uv run fastapi dev src/app/main.py --host 0.0.0.0 --port 8000",
+      "healthcheck": "/api/health",
+      "environment": {
+        "DATABASE_URL": "sqlite:////app/data/app.sqlite",
+        "CORS_ORIGINS": "http://localhost:5173,http://127.0.0.1:5173"
+      },
+      "volumes": [
+        { "source": "./backend", "target": "/app" },
+        { "source": "./backend/data", "target": "/app/data", "persist": true }
+      ]
+    },
+    {
+      "name": "frontend",
+      "type": "http",
+      "context": "./frontend",
+      "port": 5173,
+      "command": "npm run dev -- --host 0.0.0.0 --port 5173",
+      "environment": {
+        "VITE_API_BASE_URL": "http://localhost:8000"
+      },
+      "depends_on": ["backend"]
+    }
+  ],
+  "skills": ["./skills/stack-database-extension"]
+}
