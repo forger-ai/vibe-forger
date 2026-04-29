@@ -57,7 +57,8 @@
       "asset_name_template": "{name}-{version}.zip",
       "catalog_repository": "forger-ai/apps-catalog",
       "catalog_manifest_path": "vite-fastapi-sqlite/vibe-forger/manifest.json"
-    }
+    },
+    "beta": true
   },
   "services": [
     {
@@ -68,7 +69,7 @@
       "command": "uv run fastapi dev src/app/main.py --host 0.0.0.0 --port 8000",
       "healthcheck": "/health",
       "environment": {
-        "DATABASE_URL": "sqlite:////app/data/vibe_forger.sqlite",
+        "DATABASE_URL": "sqlite:///{app_data}/vibe_forger.sqlite",
         "CORS_ORIGINS": "http://localhost:5182,http://127.0.0.1:5182"
       },
       "volumes": [
